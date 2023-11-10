@@ -91,11 +91,13 @@ def create_chat_completion_message_event(
     if not transaction:
         return
 
+    message_ids = []
     for index, message in enumerate(message_list):
         if response_id:
             id_ = "%s-%d" % (response_id, index)  # Response ID was set, append message index to it.
         else:
             id_ = str(uuid.uuid4())  # No response IDs, use random UUID
+        message_ids.append(id_)
 
         chat_completion_message_dict = {
             "id": id_,
@@ -114,6 +116,8 @@ def create_chat_completion_message_event(
             "ingest_source": "Python",
         }
         transaction.record_ml_event("LlmChatCompletionMessage", chat_completion_message_dict)
+
+    return (conversation_id, request_id, message_ids)
 
 
 def extract_bedrock_titan_text_model(request_body, response_body=None):
@@ -319,13 +323,20 @@ def wrap_bedrock_runtime_invoke_model(wrapped, instance, args, kwargs):
     response_headers = response["ResponseMetadata"]["HTTPHeaders"]
 
     if model.startswith("amazon.titan-embed"):  # Only available embedding models
-        handle_embedding_event(instance, transaction, extractor, model, response_body, response_headers, request_body, ft.duration)
+        handle_embedding_event(
+            instance, transaction, extractor, model, response_body, response_headers, request_body, ft.duration
+        )
     else:
-        handle_chat_completion_event(instance, transaction, extractor, model, response_body, response_headers, request_body, ft.duration)
+        handle_chat_completion_event(
+            instance, transaction, extractor, model, response_body, response_headers, request_body, ft.duration
+        )
 
     return response
 
-def handle_embedding_event(client, transaction, extractor, model, response_body, response_headers, request_body, duration):
+
+def handle_embedding_event(
+    client, transaction, extractor, model, response_body, response_headers, request_body, duration
+):
     embedding_id = str(uuid.uuid4())
     available_metadata = get_trace_linking_metadata()
     span_id = available_metadata.get("span.id", "")
@@ -336,25 +347,29 @@ def handle_embedding_event(client, transaction, extractor, model, response_body,
 
     _, embedding_dict = extractor(request_body, response_body)
 
-    embedding_dict.update({
-        "vendor": "bedrock",
-        "ingest_source": "Python",
-        "id": embedding_id,
-        "appName": settings.app_name,
-        "span_id": span_id,
-        "trace_id": trace_id,
-        "request_id": request_id,
-        "transaction_id": transaction._transaction_id,
-        "api_key_last_four_digits": client._request_signer._credentials.access_key[-4:],
-        "duration": duration,
-        "request.model": model,
-        "response.model": model,
-    })
+    embedding_dict.update(
+        {
+            "vendor": "bedrock",
+            "ingest_source": "Python",
+            "id": embedding_id,
+            "appName": settings.app_name,
+            "span_id": span_id,
+            "trace_id": trace_id,
+            "request_id": request_id,
+            "transaction_id": transaction._transaction_id,
+            "api_key_last_four_digits": client._request_signer._credentials.access_key[-4:],
+            "duration": duration,
+            "request.model": model,
+            "response.model": model,
+        }
+    )
 
     transaction.record_ml_event("LlmEmbedding", embedding_dict)
 
 
-def handle_chat_completion_event(client, transaction, extractor, model, response_body, response_headers, request_body, duration):
+def handle_chat_completion_event(
+    client, transaction, extractor, model, response_body, response_headers, request_body, duration
+):
     custom_attrs_dict = transaction._custom_params
     conversation_id = custom_attrs_dict.get("conversation_id", "")
 
@@ -388,7 +403,7 @@ def handle_chat_completion_event(client, transaction, extractor, model, response
 
     transaction.record_ml_event("LlmChatCompletionSummary", chat_completion_summary_dict)
 
-    create_chat_completion_message_event(
+    message_ids = create_chat_completion_message_event(
         transaction=transaction,
         app_name=settings.app_name,
         message_list=message_list,
@@ -400,6 +415,9 @@ def handle_chat_completion_event(client, transaction, extractor, model, response
         conversation_id=conversation_id,
         response_id=response_id,
     )
+    if not hasattr(transaction, "_nr_message_ids"):
+        transaction._nr_message_ids = {}
+    transaction._nr_message_ids["bedrock_key"] = message_ids
 
 
 CUSTOM_TRACE_POINTS = {
