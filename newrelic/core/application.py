@@ -50,7 +50,7 @@ from newrelic.network.exceptions import (
     RetryDataForRequest,
 )
 from newrelic.samplers.data_sampler import DataSampler
-from newrelic.core.super_agent_health import super_agent_healthcheck_loop
+from newrelic.core.super_agent_health import super_agent_healthcheck_loop, HEALTH_CHECK_ENABLED, should_start_health_check
 
 _logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ class Application():
         self._data_samplers_lock = threading.Lock()
         self._data_samplers_started = False
 
-        self._super_agent_health_thread = threading.Thread(target=super_agent_healthcheck_loop, name="NR-Control-Harvest-Thread")
+        self._super_agent_health_thread = threading.Thread(target=super_agent_healthcheck_loop, name="NR-Control-Health-Session-Thread")
         self._super_agent_health_thread.daemon = True
 
         # We setup empty rules engines here even though they will be
@@ -194,8 +194,6 @@ class Application():
         to be activated.
 
         """
-        self._super_agent_health_thread.start()
-
         if self._agent_shutdown:
             return
 
@@ -204,6 +202,9 @@ class Application():
 
         if self._active_session:
             return
+
+        if should_start_health_check():
+            self._super_agent_health_thread.start()
 
         self._process_id = os.getpid()
 
@@ -1658,7 +1659,8 @@ class Application():
         """
         super_agent = super_agent_health_instance()
         super_agent.set_health_status("agent_shutdown")
-        super_agent.write_to_health_file()
+        if HEALTH_CHECK_ENABLED:
+            super_agent.write_to_health_file()
 
         # We need to stop any thread profiler session related to this
         # application.
