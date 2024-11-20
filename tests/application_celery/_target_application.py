@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from celery import Celery, shared_task
+from celery import Celery, Task, shared_task
 from testing_support.validators.validate_distributed_trace_accepted import (
     validate_distributed_trace_accepted,
 )
@@ -27,6 +27,11 @@ app = Celery(
     pool="solo",
     broker_heartbeat=0,
 )
+
+
+class CustomBaseTask(Task):
+    def __call__(self, *args, **kwargs):
+        return self.run(*args, **kwargs)
 
 
 @app.task
@@ -46,6 +51,11 @@ def nested_add(x, y):
 
 @shared_task
 def shared_task_add(x, y):
+    return x + y
+
+
+@app.task(base=CustomBaseTask)
+def custom_base_task_add(x, y):
     return x + y
 
 

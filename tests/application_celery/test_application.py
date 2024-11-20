@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from _target_application import add, nested_add, shared_task_add, tsum
+from _target_application import (
+    add,
+    custom_base_task_add,
+    nested_add,
+    shared_task_add,
+    tsum,
+)
 from testing_support.validators.validate_code_level_metrics import (
     validate_code_level_metrics,
 )
@@ -41,6 +47,22 @@ def test_celery_task_as_function_trace():
 
     """
     result = add(3, 4)
+    assert result == 7
+
+
+# Skip any tests involving worker_optimizations for custom base classes
+# https://github.com/celery/celery/blob/main/celery/app/trace.py#L713
+@validate_transaction_metrics(
+    name="test_application:test_celery_custom_base_task",
+    background_task=True,
+)
+@validate_code_level_metrics("test_application", "test_celery_custom_base_task")
+@background_task()
+def test_celery_custom_base_task():
+    """
+    Executes custom base task in local process and returns the result directly.
+    """
+    result = custom_base_task_add(3, 4)
     assert result == 7
 
 
