@@ -74,6 +74,8 @@ def CeleryTaskWrapper(wrapped):
         # Grab task name and source
         _name, _source = task_info(instance, *args, **kwargs)
 
+        import pdb; pdb.set_trace()
+
         # A Celery Task can be called either outside of a transaction, or
         # within the context of an existing transaction. There are 3
         # possibilities we need to handle:
@@ -94,6 +96,8 @@ def CeleryTaskWrapper(wrapped):
         #      This is the typical case for a celery Task. Since it's not
         #      running inside of an existing transaction, we want to create
         #      a new background transaction for it.
+
+
 
         if transaction and (transaction.ignore_transaction or transaction.stopped):
             return wrapped(*args, **kwargs)
